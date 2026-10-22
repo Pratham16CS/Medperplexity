@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "medperplexity"
+version = "0.1.0"
+description = "Evidence-backed drug research (PubMed) and Jan Aushadhi generic-medicine finder."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = ["biopython>=1.80", "pandas>=1.5", "openpyxl>=3.0"]
+
+[project.optional-dependencies]
+fast = ["rapidfuzz>=3.0"]
+agents = ["langchain-core>=0.2", "langgraph>=0.2"]
+
+[project.scripts]
+medperplexity = "medperplexity.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

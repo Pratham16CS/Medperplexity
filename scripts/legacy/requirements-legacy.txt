@@ -1,0 +1,5 @@
+# Only needed for the original embedding-based scripts in this folder (a GPU, e.g. Colab, is strongly recommended).
+pandas
+torch
+sentence-transformers
+tqdm

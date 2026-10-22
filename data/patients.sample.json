@@ -1,0 +1,210 @@
+{
+  "PAT-001": {
+    "name": "Rahul Sharma (synthetic)",
+    "age": 58,
+    "sex": "male",
+    "condition_tags": [
+      "osteoarthritis",
+      "hypertension",
+      "type 2 diabetes"
+    ],
+    "allergies": [
+      "penicillin",
+      "aspirin"
+    ],
+    "current_medications": [
+      "Metformin 500",
+      "Telmisartan 40"
+    ]
+  },
+  "PAT-002": {
+    "name": "Meera Iyer (synthetic)",
+    "age": 34,
+    "sex": "female",
+    "condition_tags": [
+      "migraine"
+    ],
+    "allergies": [],
+    "current_medications": [
+      "Paracetamol 500"
+    ]
+  },
+  "PAT-003": {
+    "name": "Arjun Rao (synthetic)",
+    "age": 71,
+    "sex": "male",
+    "condition_tags": [
+      "coronary artery disease",
+      "gastro-oesophageal reflux"
+    ],
+    "allergies": [],
+    "current_medications": [
+      "Clopidogrel 75",
+      "Atorvastatin 20"
+    ]
+  },
+  "PAT-004": {
+    "name": "Ananya Desai (synthetic)",
+    "age": 45,
+    "sex": "female",
+    "condition_tags": [
+      "bacterial sinusitis (suspected)",
+      "hypertension"
+    ],
+    "allergies": [
+      "sulfonamide antibiotics"
+    ],
+    "current_medications": [
+      "Amlodipine 5"
+    ]
+  },
+  "PAT-005": {
+    "name": "Vikram Nair (synthetic)",
+    "age": 66,
+    "sex": "male",
+    "condition_tags": [
+      "atrial fibrillation",
+      "hypertension"
+    ],
+    "allergies": [],
+    "current_medications": [
+      "Warfarin 5",
+      "Amlodipine 5"
+    ]
+  },
+  "PAT-006": {
+    "name": "Sara Khan (synthetic)",
+    "age": 29,
+    "sex": "female",
+    "condition_tags": [
+      "acne"
+    ],
+    "allergies": [],
+    "current_medications": [
+      "Isotretinoin 20"
+    ]
+  },
+  "PAT-007": {
+    "name": "Dev Patel (synthetic)",
+    "age": 52,
+    "sex": "male",
+    "condition_tags": [
+      "type 2 diabetes",
+      "hypertension"
+    ],
+    "allergies": [],
+    "current_medications": [
+      "Metformin 1000",
+      "Ramipril 5"
+    ]
+  },
+  "PAT-008": {
+    "name": "Kavya Menon (synthetic)",
+    "age": 37,
+    "sex": "female",
+    "condition_tags": [
+      "gastro-oesophageal reflux"
+    ],
+    "allergies": [
+      "omeprazole"
+    ],
+    "current_medications": [
+      "Famotidine 20"
+    ]
+  },
+  "PAT-009": {
+    "name": "Rohan Kulkarni (synthetic)",
+    "age": 61,
+    "sex": "male",
+    "condition_tags": [
+      "hyperlipidaemia",
+      "coronary artery disease"
+    ],
+    "allergies": [],
+    "current_medications": [
+      "Simvastatin 40",
+      "Aspirin 75"
+    ]
+  },
+  "PAT-010": {
+    "name": "Ishita Bose (synthetic)",
+    "age": 31,
+    "sex": "female",
+    "condition_tags": [
+      "pregnancy",
+      "acne"
+    ],
+    "allergies": [],
+    "current_medications": [
+      "Prenatal vitamin"
+    ]
+  },
+  "PAT-011": {
+    "name": "Sameer Joshi (synthetic)",
+    "age": 24,
+    "sex": "male",
+    "condition_tags": [
+      "seasonal allergic rhinitis"
+    ],
+    "allergies": [
+      "cetirizine"
+    ],
+    "current_medications": []
+  },
+  "PAT-012": {
+    "name": "Farah Ali (synthetic)",
+    "age": 73,
+    "sex": "female",
+    "condition_tags": [
+      "chronic kidney disease",
+      "hypertension"
+    ],
+    "allergies": [],
+    "current_medications": [
+      "Losartan 50",
+      "Furosemide 20"
+    ]
+  },
+  "PAT-013": {
+    "name": "Nikhil Shah (synthetic)",
+    "age": 40,
+    "sex": "male",
+    "condition_tags": [
+      "Helicobacter pylori infection (confirmed)"
+    ],
+    "allergies": [
+      "penicillin"
+    ],
+    "current_medications": [
+      "Pantoprazole 40"
+    ]
+  },
+  "PAT-014": {
+    "name": "Pooja Reddy (synthetic)",
+    "age": 56,
+    "sex": "female",
+    "condition_tags": [
+      "type 2 diabetes",
+      "osteoarthritis"
+    ],
+    "allergies": [],
+    "current_medications": [
+      "Metformin 500",
+      "Empagliflozin 10"
+    ]
+  },
+  "PAT-015": {
+    "name": "Aarav Gupta (synthetic)",
+    "age": 48,
+    "sex": "male",
+    "condition_tags": [
+      "erectile dysfunction",
+      "stable angina"
+    ],
+    "allergies": [],
+    "current_medications": [
+      "Isosorbide mononitrate 30",
+      "Aspirin 75"
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+# Large raw source data (see data/README.md)
+data/raw/
+data/brand_medicines.csv
