@@ -345,11 +345,22 @@ def _confidence(score: float) -> str:
 def _lookup_one(finder: GenericFinder, query: str, max_alternatives: int) -> Dict[str, Any]:
     result = finder.search(query, limit=max(max_alternatives, 2))
     if not result["found"]:
+        ambiguous = bool(result.get("ambiguous", False))
+        clarification = result.get("clarification")
+
         return {
-            "input": query, "found": False, "ambiguous": False, "confidence": None,
+            "input": query,
+            "found": False,
+            "ambiguous": ambiguous,
+            "confidence": result.get("confidence", "low"),
             "closest": result.get("closest", [])[:max_alternatives],
-            "message": result["message"],
-            "action": "No Jan Aushadhi substitute found in the database. Do not infer or invent one.",
+            "message": result.get("message", "No catalogue match found."),
+            "clarification": clarification,
+            "action": (
+                clarification
+                or "No suitable catalogue match was identified. "
+                   "Do not infer or invent a substitute."
+            ),
         }
     match = result["match"]
     top = match["match_score"]
@@ -559,42 +570,175 @@ def call_tool_json(name: Any, arguments: Any = None) -> str:
 # --------------------------------------------------------------------------- #
 # Helpers for the agent that consumes the tools
 # --------------------------------------------------------------------------- #
-def assess_evidence(result: Dict[str, Any]) -> Dict[str, Any]:
-    """Decide how much weight a ``search_medical_evidence`` result can carry.
 
-    ``level``: direct (found, search not broadened) | indirect (found after broadening) |
-    none (searched, nothing found) | unavailable (search failed or input invalid).
-    A clear recommendation is only supportable on direct evidence.
+def _normalised_terms(value: Any) -> set[str]:
+    """Return useful alphanumeric terms for a conservative lexical relevance check."""
+    if isinstance(value, (list, tuple, set)):
+        value = " ".join(str(item) for item in value if item)
+
+    text = str(value or "").lower()
+    tokens = re.findall(r"[a-z][a-z0-9]{2,}", text)
+    stop_words = {
+        "the", "and", "for", "with", "from", "that", "this", "are", "was",
+        "were", "use", "using", "used", "about", "after", "before", "does",
+        "have", "has", "patient", "clinical", "study", "effect", "effects",
+        "review", "safety", "evidence", "treatment", "medicine", "drug",
+        "drugs", "risk", "risks", "among", "into", "than", "their", "these",
+        "those", "which", "while", "also", "based", "associated", "analysis",
+    }
+    return {token for token in tokens if token not in stop_words}
+
+
+def assess_evidence(
+    result: Dict[str, Any],
+    *,
+    question: Optional[str] = None,
+    drugs: Optional[Sequence[str]] = None,
+    condition: Optional[str] = None,
+    intent: Optional[str] = None,
+    topic: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Assess retrieval status and, when query context is supplied, topical relevance.
+
+    This lexical screen is a heuristic only; it is not clinical appraisal and must
+    never be treated as proof that a treatment is safe or effective.
     """
     status = result.get("status")
-    data = result.get("data", {})
-    if status == "ok" and not data.get("relaxations"):
-        return {"level": "direct", "can_support_clear_recommendation": True,
-                "reason": f"{data.get('article_count', 0)} article(s) matched the full question."}
-    if status == "ok":
-        return {"level": "indirect", "can_support_clear_recommendation": False,
-                "reason": "Articles were found only after the search was broadened: " +
-                          "; ".join(data.get("relaxations", [])) + "."}
+    data = result.get("data") or {}
+
     if status == "no_results":
-        return {"level": "none", "can_support_clear_recommendation": False,
-                "reason": "No articles found. This is not evidence of safety."}
-    return {"level": "unavailable", "can_support_clear_recommendation": False,
-            "reason": result.get("message", "Evidence search did not run.")}
+        return {
+            "level": "none",
+            "can_support_clear_recommendation": False,
+            "reason": "No articles were found. This is not evidence of safety.",
+        }
+
+    if status != "ok":
+        return {
+            "level": "unavailable",
+            "can_support_clear_recommendation": False,
+            "reason": result.get("message", "Evidence search did not run."),
+        }
+
+    articles = data.get("articles") or []
+    relaxations = data.get("relaxations") or []
+    high_evidence_filter = data.get("high_evidence_filter", True)
+    drug_list = [str(item) for item in (drugs or []) if str(item).strip()]
+    drug_terms = [_normalised_terms(item) for item in drug_list]
+    condition_terms = _normalised_terms(condition)
+    topic_terms = _normalised_terms(topic)
+    question_terms = _normalised_terms(question)
+    intent_text = str(intent or "").lower()
+    has_context = bool(drug_terms or condition_terms or topic_terms or question_terms)
+
+    relevant_articles = []
+    if has_context:
+        for article in articles:
+            article_text = " ".join(
+                str(article.get(field) or "")
+                for field in ("title", "abstract", "publication_types", "evidence_type")
+            )
+            article_terms = _normalised_terms(article_text)
+            if not article_terms:
+                continue
+
+            if drug_terms:
+                drug_hits = [bool(terms & article_terms) for terms in drug_terms if terms]
+                if not drug_hits:
+                    continue
+                # Interaction evidence should mention both named medicines.
+                drug_match = all(drug_hits) if intent_text == "interaction" and len(drug_hits) > 1 else any(drug_hits)
+                if not drug_match:
+                    continue
+
+            # For drug-specific questions, require the medicine name(s) to appear.
+            # Condition/topic terms are not mandatory because abstracts often use
+            # synonyms or omit the indication in indexed metadata. They are used as
+            # anchors for topic-only searches below.
+            if not drug_terms:
+                anchors = condition_terms | topic_terms
+                if not anchors:
+                    anchors = question_terms
+                if anchors and not (anchors & article_terms):
+                    continue
+
+            relevant_articles.append(article)
+
+        if not relevant_articles:
+            return {
+                "level": "indirect",
+                "can_support_clear_recommendation": False,
+                "reason": (
+                    "Articles were retrieved, but none passed the basic lexical "
+                    "relevance check for the supplied drug/condition/topic. "
+                    "Review the search terms and articles manually."
+                ),
+            }
+
+    # Broadening always prevents a clear-recommendation evidence label, even if
+    # some results overlap lexically with the request.
+    if relaxations or high_evidence_filter is False:
+        details = "; ".join(str(item) for item in relaxations) or (
+            "the high-evidence filter was not retained"
+        )
+        return {
+            "level": "indirect",
+            "can_support_clear_recommendation": False,
+            "reason": (
+                "Articles were found only after retrieval was broadened or filtered "
+                "less strictly: " + details + "."
+            ),
+        }
+
+    count = len(relevant_articles) if has_context else data.get("article_count", len(articles))
+    return {
+        "level": "direct",
+        "can_support_clear_recommendation": True,
+        "reason": (
+            f"{count} article(s) matched the unbroadened search and basic lexical "
+            "relevance check. This is not a clinical conclusion."
+            if has_context
+            else f"{count} article(s) matched the unbroadened evidence search; "
+                 "topical relevance was not independently checked."
+        ),
+    }
 
 
-def format_evidence_for_prompt(result: Dict[str, Any], max_chars: int = 6000) -> str:
-    """Compact, bounded text block of a result for an LLM prompt, with PMIDs and explicit caveats."""
-    verdict = assess_evidence(result)
+def format_evidence_for_prompt(
+    result: Dict[str, Any],
+    max_chars: int = 6000,
+    *,
+    question: Optional[str] = None,
+    drugs: Optional[Sequence[str]] = None,
+    condition: Optional[str] = None,
+    intent: Optional[str] = None,
+    topic: Optional[str] = None,
+) -> str:
+    """Format bounded evidence text with query-aware relevance caveats."""
+    verdict = assess_evidence(
+        result,
+        question=question,
+        drugs=drugs,
+        condition=condition,
+        intent=intent,
+        topic=topic,
+    )
     header = f"EVIDENCE LEVEL: {verdict['level'].upper()} - {verdict['reason']}"
     if verdict["level"] in ("none", "unavailable"):
         return header
-    lines = [header, f"Search: {result['data'].get('search_query', '')}", ""]
-    for article in result["data"].get("articles", []):
-        lines.append(f"[PMID {article['pmid']}] {article['title']} ({article['journal']}, {article['pub_date']}; "
-                     f"{article['evidence_type']})")
-        lines.append(f"  Abstract: {article['abstract']}")
-        lines.append(f"  URL: {article['url']}")
+
+    data = result.get("data") or {}
+    lines = [header, f"Search: {data.get('search_query', '')}", ""]
+    for article in data.get("articles", []):
+        lines.append(
+            f"[PMID {article.get('pmid', '')}] {article.get('title', '')} "
+            f"({article.get('journal', '')}, {article.get('pub_date', '')}; "
+            f"{article.get('evidence_type', 'unknown')})"
+        )
+        lines.append(f"  Abstract: {article.get('abstract', '')}")
+        lines.append(f"  URL: {article.get('url', '')}")
         lines.append("")
+
     text = "\n".join(lines).rstrip()
     return text if len(text) <= max_chars else text[: max_chars - 40].rstrip() + "\n...[truncated for length]"
 

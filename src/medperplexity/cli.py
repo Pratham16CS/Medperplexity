@@ -86,7 +86,7 @@ def _cmd_ask(args: argparse.Namespace) -> int:
         print("No LLM is configured (see .env.example): using the rule-based planner and returning evidence "
               "without an AI explanation.", file=sys.stderr)
     deps = AgentDeps(llm=llm, patients=PatientStore(args.patients) if args.patients else None)
-    response = MedAgent(deps).ask(args.patient, args.question)
+    response = MedAgent(deps).ask(args.patient, args.question, thread_id=args.conversation)
     if not args.audit:
         response.pop("audit", None)
     _print_json(response)
@@ -152,6 +152,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("question", help='e.g. "Prescribe Diclofenac for joint pain"')
     p.add_argument("--patients", default=None, help="path to patients JSON (default data/patients.json)")
     p.add_argument("--audit", action="store_true", help="include the audit block in the output")
+    p.add_argument("--conversation", default="default", help="conversation ID to resume across commands; each ID is bound to one patient")
     p.set_defaults(func=_cmd_ask)
 
     p = sub.add_parser("llm-check", help="test every configured LLM provider with a tiny request")

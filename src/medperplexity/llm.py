@@ -196,10 +196,11 @@ class OpenRouterProvider(Provider):
     name = "openrouter"
     url = "https://openrouter.ai/api/v1/chat/completions"
 
-    def __init__(self, api_key: str = "", model: str = "", fallback_models: Optional[List[str]] = None,
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None,
+                 fallback_models: Optional[List[str]] = None,
                  data_collection: Optional[str] = None, zdr: Optional[bool] = None):
-        super().__init__(model or _env("OPENROUTER_MODEL"))
-        self.api_key = api_key or _env("OPENROUTER_API_KEY")
+        super().__init__(_env("OPENROUTER_MODEL") if model is None else model)
+        self.api_key = _env("OPENROUTER_API_KEY") if api_key is None else api_key
         policy = (data_collection or _env("OPENROUTER_DATA_COLLECTION") or "deny").lower()
         self.data_collection = policy if policy in ("allow", "deny") else "deny"
         self.zdr = zdr if zdr is not None else _env("OPENROUTER_ZDR").lower() in ("1", "true", "yes", "on")
@@ -254,9 +255,11 @@ class AnthropicProvider(Provider):
     name = "anthropic"
     url = "https://api.anthropic.com/v1/messages"
 
-    def __init__(self, api_key: str = "", model: str = ""):
-        super().__init__(model or _env("ANTHROPIC_MODEL") or DEFAULT_ANTHROPIC_MODEL)
-        self.api_key = api_key or _env("ANTHROPIC_API_KEY")
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
+        if model is None:
+            model = _env("ANTHROPIC_MODEL") or DEFAULT_ANTHROPIC_MODEL
+        super().__init__(model)
+        self.api_key = _env("ANTHROPIC_API_KEY") if api_key is None else api_key
 
     def available(self) -> bool:
         return bool(self.api_key and self.model)
@@ -281,9 +284,9 @@ class OpenAIProvider(Provider):
     name = "openai"
     url = "https://api.openai.com/v1/chat/completions"
 
-    def __init__(self, api_key: str = "", model: str = ""):
-        super().__init__(model or _env("OPENAI_MODEL"))
-        self.api_key = api_key or _env("OPENAI_API_KEY")
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
+        super().__init__(_env("OPENAI_MODEL") if model is None else model)
+        self.api_key = _env("OPENAI_API_KEY") if api_key is None else api_key
 
     def available(self) -> bool:
         return bool(self.api_key and self.model)
@@ -315,9 +318,9 @@ class GeminiProvider(Provider):
     name = "gemini"
     base_url = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-    def __init__(self, api_key: str = "", model: str = ""):
-        super().__init__(model or _env("GEMINI_MODEL"))
-        self.api_key = api_key or _env("GOOGLE_API_KEY", "GEMINI_API_KEY")
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
+        super().__init__(_env("GEMINI_MODEL") if model is None else model)
+        self.api_key = _env("GOOGLE_API_KEY", "GEMINI_API_KEY") if api_key is None else api_key
 
     def available(self) -> bool:
         return bool(self.api_key and self.model)

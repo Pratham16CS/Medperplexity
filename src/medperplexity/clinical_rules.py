@@ -228,11 +228,13 @@ def extract_known_drugs(text: str) -> List[str]:
     for name in _KNOWN_DRUG_NAMES:
         pattern = re.compile(rf"(?<![a-z]){re.escape(name)}(?![a-z])", re.IGNORECASE)
         for match in pattern.finditer(normalized):
-            mention = name
+            # Return normalized catalogue spelling, independent of how the doctor
+            # capitalized the name in free text. This keeps downstream matching stable.
+            mention = name.lower()
             tail = normalized[match.end():]
             strength = re.match(r"\s+(\d+(?:\.\d+)?)\b", tail)
             if strength:
-                mention = f"{name} {strength.group(1)}"
+                mention = f"{mention} {strength.group(1)}"
             found.append((match.start(), mention))
     # Preserve source order, deduplicate equivalent mentions, and avoid returning a shorter name
     # nested inside a longer name at the same position.

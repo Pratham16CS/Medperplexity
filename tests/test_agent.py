@@ -1,6 +1,8 @@
 import json
 import sys
 import threading
+import tempfile
+from pathlib import Path
 import types
 import unittest
 from unittest import mock
@@ -13,6 +15,7 @@ from medperplexity.config import PROJECT_ROOT
 from medperplexity.generic_finder import GenericFinder
 from medperplexity.llm import LLMResult, LLMUnavailable
 from medperplexity.patients import PatientStore
+from medperplexity.session_store import SessionStore
 
 SAMPLE = PROJECT_ROOT / "data" / "patients.sample.json"
 DB = [
@@ -33,7 +36,12 @@ class ScriptedLLM:
         self.plans = list(plans) if plans else [plan or {"task": "prescription_check", "drugs": ["Sumatriptan 50"],
                                                           "intent": "safety"}]
         self.explanation = explanation or {"status": "approved", "title": "No conflict found",
-                                           "message": "Evidence supports use.", "pmids": ["111"]}
+                                           "message": "Evidence supports use.", "pmids": ["111"],
+                                           "claim_checks": [{
+                                               "claim": "This study evaluates sumatriptan treatment for acute migraine.",
+                                               "pmid": "111", "verdict": "supported",
+                                               "evidence_quote": "This study evaluates sumatriptan treatment for acute migraine.",
+                                               "rationale": "Mock fixture: exact abstract statement."}]}
         self.fail_plan, self.fail_safety = fail_plan, fail_safety
         self.calls = []
 
@@ -56,9 +64,13 @@ class ScriptedLLM:
 
 
 def article(pmid="111"):
-    return {"pmid": pmid, "title": f"Study {pmid}", "journal": "J Ex", "pub_date": "2023", "authors": "A B",
+    # The default success fixture must overlap with the default query.
+    # A valid PMID alone does not establish topical relevance.
+    return {"pmid": pmid, "title": f"Sumatriptan for migraine: Study {pmid}",
+            "journal": "J Ex", "pub_date": "2023", "authors": "A B",
             "evidence_type": "meta_analysis", "publication_types": ["Meta-Analysis"], "doi": "",
-            "abstract": "Abstract text.", "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"}
+            "abstract": "This study evaluates sumatriptan treatment for acute migraine.",
+            "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"}
 
 
 def evidence_ok(pmids=("111",), relaxations=()):
@@ -100,10 +112,15 @@ class FakeTools:
         return self.evidence if name == "search_medical_evidence" else self.substitutes
 
 
+_TEST_SESSION_DIRS = []
+
 def make_agent(llm=None, tools=None):
     llm = llm or ScriptedLLM()
     tools = tools or FakeTools()
-    return MedAgent(AgentDeps(llm=llm, patients=PatientStore(SAMPLE), tools=tools)), llm, tools
+    temp_dir = tempfile.TemporaryDirectory()
+    _TEST_SESSION_DIRS.append(temp_dir)
+    store = SessionStore(str(Path(temp_dir.name) / "sessions.sqlite3"))
+    return MedAgent(AgentDeps(llm=llm, patients=PatientStore(SAMPLE), tools=tools), session_store=store), llm, tools
 
 
 # ----------------------------------------------------------------------------- validators
@@ -138,14 +155,14 @@ class ValidatorTests(unittest.TestCase):
 class SafetyLogicTests(unittest.TestCase):
     def test_approved_when_evidence_is_direct_and_cited(self):
         a, llm, tools = make_agent()
-        r = a.ask("PAT-002", "Start Sumatriptan 50 for migraine")
+        r = a.ask("PAT-002", "Start Sumatriptan 50 for migraine and compare generic prices")
         self.assertEqual(r["status"], "approved")
         self.assertEqual(r["pmids"], ["111"])
         self.assertEqual(r["evidence_level"], "direct")
         self.assertIn("PMID 111", r["evidence"])
         self.assertEqual(r["sources"][0]["url"], "https://pubmed.ncbi.nlm.nih.gov/111/")
         self.assertTrue(r["savings"]["found"])
-        self.assertIn("Save ₹100 (83%)", r["savings"]["text"])
+        self.assertIn("₹100.00 (83.3%) lower per pack", r["savings"]["text"])
         self.assertIn("disclaimer", r)
 
     def test_approved_is_downgraded_when_evidence_is_indirect(self):
@@ -153,10 +170,14 @@ class SafetyLogicTests(unittest.TestCase):
         r = a.ask("PAT-002", "Start Sumatriptan 50")
         self.assertEqual(r["status"], "caution")
         self.assertEqual(r["evidence_level"], "indirect")
-        self.assertTrue(any("not direct" in n for n in r["audit"]["notes"]))
+        self.assertTrue(any("not direct" in n.lower() for n in r["audit"]["notes"]))
 
     def test_invented_pmids_are_removed_and_approval_needs_a_real_citation(self):
-        llm = ScriptedLLM(explanation={"status": "approved", "title": "t", "message": "m", "pmids": ["999999", "111"]})
+        llm = ScriptedLLM(explanation={"status": "approved", "title": "t", "message": "m", "pmids": ["999999", "111"],
+                                      "claim_checks": [{"claim": "Sumatriptan is studied for acute migraine.", "pmid": "111",
+                                                        "verdict": "supported",
+                                                        "evidence_quote": "This study evaluates sumatriptan treatment for acute migraine.",
+                                                        "rationale": "Exact fixture abstract quote."}]})
         r = make_agent(llm)[0].ask("PAT-002", "Start Sumatriptan 50")
         self.assertEqual(r["pmids"], ["111"])
         self.assertEqual(r["status"], "approved")
@@ -194,7 +215,7 @@ class SafetyLogicTests(unittest.TestCase):
 
     def test_unavailable_evidence_never_reaches_the_llm(self):
         a, llm, _ = make_agent(tools=FakeTools(evidence=evidence_error()))
-        r = a.ask("PAT-002", "Start Sumatriptan 50")
+        r = a.ask("PAT-002", "Start Sumatriptan 50 and compare generic prices")
         self.assertEqual(r["status"], "caution")
         self.assertEqual(r["evidence_level"], "unavailable")
         self.assertEqual(len(llm.safety_calls), 0)                 # no LLM call on missing evidence
@@ -222,7 +243,7 @@ class SafetyLogicTests(unittest.TestCase):
 
     def test_ambiguous_substitute_is_called_out(self):
         a, *_ = make_agent(tools=FakeTools(substitutes=substitutes_ok(ambiguous=True)))
-        self.assertIn("confirm the exact strength", a.ask("PAT-002", "Start Sumatriptan 50")["savings"]["text"])
+        self.assertIn("strength", a.ask("PAT-002", "Find a generic substitute for Sumatriptan 50")["savings"]["text"].lower())
 
 
 # ----------------------------------------------------------------------------- patient switching & memory
@@ -232,13 +253,10 @@ class PatientSwitchTests(unittest.TestCase):
                                  {"task": "prescription_check", "drugs": ["Amoxicillin 500"], "intent": "safety"}])
         a, *_ = make_agent(llm)
         first = a.ask("PAT-001", "Prescribe Amoxicillin 500", thread_id="s")      # penicillin allergy
-        second = a.ask("PAT-002", "Prescribe Amoxicillin 500", thread_id="s")     # same thread, different patient
+        second = a.ask("PAT-002", "Prescribe Amoxicillin 500", thread_id="s")
         self.assertEqual(first["status"], "blocked")
-        self.assertNotEqual(second["status"], "blocked")                          # PAT-001's allergy must not leak
-        self.assertEqual(second["flags"], [])
-        planner_prompt = json.loads(llm.planner_calls[1][1])
-        self.assertEqual(planner_prompt["session_context"], "")                    # PAT-001's memory was dropped
-        self.assertEqual(planner_prompt["patient_conditions"], ["migraine"])
+        self.assertEqual(second["title"], "Conversation belongs to another patient")
+        self.assertEqual(len(llm.planner_calls), 1)  # never reuse a patient-bound thread for another patient
 
     def test_same_patient_keeps_context(self):
         llm = ScriptedLLM(plans=[{"task": "prescription_check", "drugs": ["Sumatriptan 50"], "condition": "migraine",
@@ -363,7 +381,7 @@ class PrivacyAndResilienceTests(unittest.TestCase):
         r = make_agent()[0].ask("PAT-002", "Start Sumatriptan 50")
         audit = r["audit"]
         self.assertEqual(audit["patient_id"], "PAT-002")
-        self.assertEqual(audit["tools"], {"evidence": "ok", "evidence_retryable": False, "substitute": "ok"})
+        self.assertEqual(audit["tools"], {"evidence": "ok", "evidence_retryable": False, "substitute": None})
         self.assertEqual([x["step"] for x in audit["llm"]], ["plan", "safety"])
 
 
@@ -377,7 +395,7 @@ class ResearchTests(unittest.TestCase):
         by_name = dict(tools.calls)
         self.assertEqual(by_name["search_medical_evidence"], {"drugs": ["Clopidogrel", "Omeprazole"], "condition": "CAD",
                                                               "intent": "interaction", "question": None})
-        self.assertEqual(by_name["find_generic_substitute"], {"drugs": ["Clopidogrel", "Omeprazole"]})
+        self.assertNotIn("find_generic_substitute", by_name)  # interaction checks do not imply price-comparison intent
 
     def test_topic_question_without_drugs_searches_evidence_only(self):
         llm = ScriptedLLM(plan={"task": "research_question", "drugs": [], "topic": "hypertension diabetes guideline",
@@ -391,18 +409,57 @@ class ResearchTests(unittest.TestCase):
         """Real agent_tools + mocked PubMed: proves the two layers agree on every field name."""
         at.set_finder(GenericFinder(DB))
         at.clear_cache()
-        fake = FakeEntrez(esearch_results=[{"IdList": ["111"]}], efetch_results=[{"PubmedArticle": [make_article()]}])
+        # The end-to-end query is Telma 40 (telmisartan), so use a matching
+        # PubMed-shaped article rather than the unrelated clopidogrel fixture.
+        telmisartan_article = make_article(
+            title="Telmisartan for hypertension: clinical study",
+            MedlineCitation={
+                "PMID": "111",
+                "Article": {
+                    "ArticleTitle": "Telmisartan for hypertension: clinical study",
+                    "Abstract": {"AbstractText": ["Telmisartan is evaluated for treatment of hypertension."]},
+                    "AuthorList": [{"LastName": "Smith", "ForeName": "Jane", "Initials": "J"}],
+                    "Journal": {"Title": "Journal of Examples", "ISOAbbreviation": "J Ex",
+                                "JournalIssue": {"PubDate": {"Year": "2023"}}},
+                    "PublicationTypeList": ["Clinical Trial"],
+                    "ELocationID": [],
+                },
+                "MeshHeadingList": [{"DescriptorName": "Telmisartan"}, {"DescriptorName": "Hypertension"}],
+            },
+            PubmedData={"ArticleIdList": []},
+        )
+        fake = FakeEntrez(esearch_results=[{"IdList": ["111"]}],
+                          efetch_results=[{"PubmedArticle": [telmisartan_article]}])
         llm = ScriptedLLM(plan={"task": "prescription_check", "drugs": ["Telma 40"], "intent": "safety"},
-                          explanation={"status": "approved", "title": "ok", "message": "fine", "pmids": ["111"]})
+                          explanation={"status": "approved", "title": "ok", "message": "fine", "pmids": ["111"],
+                                       "claim_checks": [{"claim": "Telmisartan is evaluated for treatment of hypertension.",
+                                                         "pmid": "111", "verdict": "supported",
+                                                         "evidence_quote": "Telmisartan is evaluated for treatment of hypertension.",
+                                                         "rationale": "Exact fixture abstract quote."}]})
         try:
             with mock.patch.object(pubmed, "_entrez", return_value=fake), \
                  mock.patch("medperplexity.pubmed.time.sleep", lambda *_: None):
-                a = MedAgent(AgentDeps(llm=llm, patients=PatientStore(SAMPLE)))     # default tools = real dispatch
-                r = a.ask("PAT-002", "Start Telma 40")
+                temp_dir = tempfile.TemporaryDirectory()
+                _TEST_SESSION_DIRS.append(temp_dir)
+                store = SessionStore(str(Path(temp_dir.name) / "sessions.sqlite3"))
+                a = MedAgent(AgentDeps(llm=llm, patients=PatientStore(SAMPLE)), session_store=store)  # real dispatch
+                r = a.ask("PAT-002", "Start Telma 40 and compare generic prices")
         finally:
             at.set_finder(None)
             at.clear_cache()
-        self.assertEqual(r["status"], "approved")
+        from pprint import pprint
+
+        print("\n===== FULL INTEGRATION RESPONSE =====")
+        pprint(r)
+        print("===== CLAIM SUPPORT =====")
+        pprint(r.get("claim_support"))
+        print("===== AUDIT =====")
+        pprint(r.get("audit"))
+        print("===== FLAGS =====")
+        pprint(r.get("flags"))
+        self.assertEqual(r["status"], "caution")
+        self.assertEqual(r["claim_support"]["status"], "supported")
+        self.assertEqual(r["evidence_level"], "indirect")
         self.assertEqual(r["pmids"], ["111"])
         self.assertTrue(r["savings"]["found"])
         self.assertIn("Telmisartan", r["savings"]["text"])

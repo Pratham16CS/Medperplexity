@@ -26,6 +26,7 @@ log = logging.getLogger(__name__)
 
 DEFAULT_MIN_YEAR = 2015
 DEFAULT_RETMAX = 5
+MAX_RESULTS_CAP = 10
 
 QUALITY_FILTER = (
     "(Systematic Review[pt] OR Guideline[pt] OR Clinical Trial[pt] OR Meta-Analysis[pt])"
@@ -224,6 +225,11 @@ def search_pubmed_ids(
 ) -> List[str]:
     """ESearch: return PMIDs (most relevant first) for ``query``."""
     term = build_search_term(query, strict_mode=strict_mode, min_year=min_year)
+    # Bound outbound ESearch requests even when this helper is called directly.
+    try:
+        retmax = max(1, min(MAX_RESULTS_CAP, int(retmax)))
+    except (TypeError, ValueError):
+        retmax = DEFAULT_RETMAX
     entrez = _entrez()
 
     def _do() -> Any:
