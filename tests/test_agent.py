@@ -7,6 +7,9 @@ import types
 import unittest
 from unittest import mock
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 from tests import _paths  # noqa: F401
 from tests.fakes import FakeEntrez, make_article
 from medperplexity import agent, agent_tools as at, pubmed

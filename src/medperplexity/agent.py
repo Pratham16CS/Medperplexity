@@ -42,7 +42,7 @@ from .patients import PatientStore, patient_view
 log = logging.getLogger(__name__)
 
 STATUSES = ("approved", "caution", "blocked", "info")  # kept for frontend compatibility
-TASKS = ("prescription_check", "research_question", "followup", "general", "generic_substitution")
+TASKS = ("prescription_check", "research_question", "followup", "general", "generic_substitution", "record_summary")
 MAX_MEMORY_TURNS = 5
 MAX_CONTEXT_CHARS = 600
 DISCLAIMER = agent_tools.DISCLAIMER
@@ -88,7 +88,7 @@ class AgentDeps:
 # --------------------------------------------------------------------------- #
 PLANNER_SYSTEM = """You are the planning step of a clinical decision-support assistant used by doctors.
 Read the doctor's request and reply with ONLY one JSON object, no other text:
-{"task": "prescription_check" | "research_question" | "followup" | "general",
+{"task": "prescription_check" | "research_question" | "followup" | "general" | "generic_substitution" | "record_summary",
  "drugs": ["medicine names exactly as the doctor wrote them, names only"],
  "condition": "clinical condition relevant to the question, or null",
  "intent": "interaction" | "safety" | "contraindication" | "efficacy" | "dosing" | "guideline" | "general",
@@ -96,11 +96,14 @@ Read the doctor's request and reply with ONLY one JSON object, no other text:
  "clarification": "one short question for the doctor if the request is too ambiguous to act on, else null"}
 Rules:
 - Names only. Never output a person's name, ID, or any other identifier.
+- If the doctor asks to summarize, list, review, or extract the patient's record, chart, medical conditions, allergies, or current medications, use task "record_summary" and leave drugs empty.
 - For a follow-up such as "what about X?", use session_context to carry over the condition and intent.
 - If two or more medicines are named, intent is usually "interaction".
 - Do not invent medicines that the doctor did not mention.
-Example: {"doctor_request": "Prescribe Diclofenac for joint pain", "patient_conditions": ["osteoarthritis"]}
--> {"task": "prescription_check", "drugs": ["Diclofenac"], "condition": "joint pain", "intent": "safety", "topic": null, "clarification": null}"""
+Example 1: {"doctor_request": "Prescribe Diclofenac for joint pain", "patient_conditions": ["osteoarthritis"]}
+-> {"task": "prescription_check", "drugs": ["Diclofenac"], "condition": "joint pain", "intent": "safety", "topic": null, "clarification": null}
+Example 2: {"doctor_request": "Summarize this patient's recorded conditions, allergies, and current medications", "patient_conditions": ["hypertension"]}
+-> {"task": "record_summary", "drugs": [], "condition": null, "intent": "general", "topic": null, "clarification": null}"""
 
 SAFETY_SYSTEM = """You are Med Perplexity, a careful clinical decision-support assistant writing for a doctor.
 You receive the patient's clinical summary, the doctor's request, deterministic alerts already computed by software
@@ -232,15 +235,183 @@ def render_memory(memory: List[Dict[str, Any]]) -> str:
     return text[-MAX_CONTEXT_CHARS:]
 
 
+def _is_record_summary_request(query: str) -> bool:
+    """Classify whether the doctor's query is a patient record summary request.
+
+    Separates record summaries from prescription orders, allergy safety checks, drug-drug
+    interactions, clinical research literature questions, and generic substitutions.
+    """
+    q = str(query or "").strip().lower()
+    if not q:
+        return False
+
+    # Exclude queries that express prescription orders, safety evaluations, interactions, literature, or pricing
+    safety_triggers = [
+        r"\bcan i (prescribe|give|order|start|administer|use)\b",
+        r"\b(prescribe|order|give|administer|start)\s+[a-z0-9]",
+        r"\bsafe to (give|prescribe|administer|take|use)\b",
+        r"\b(interact|interaction)s?\b",
+        r"\bcontraindicat",
+        r"\b(generic|cheaper|substitute|savings|price comparison)\b",
+        r"\b(guideline|guidelines|literature|meta-analysis|systematic review|trials?|studies|pubmed|evidence)\b",
+    ]
+    for pattern in safety_triggers:
+        if re.search(pattern, q):
+            return False
+
+    # Positive summary patterns
+    summary_verbs = r"(summariz\w*|summaris\w*|list\w*|review\w*|outline\w*|detail\w*|display\w*|show\w*|extract\w*|what are|what is|check\w*|provide\w*)"
+    chart_targets = r"(record\w*|chart\w*|documented|document\w*|history|condition\w*|allerg\w*|medication\w*|medicine\w*|meds|diagnos\w*|regimen\w*)"
+
+    if re.search(rf"\b{summary_verbs}\b", q) and re.search(rf"\b{chart_targets}\b", q):
+        return True
+
+    if "using only the patient record" in q or "from the patient record" in q or "in this record" in q:
+        return True
+
+    return False
+
+
+def build_patient_record_summary(patient: Dict[str, Any], query: str = "") -> Dict[str, Any]:
+    """Build a grounded summary of the patient record.
+
+    Adheres strictly to the documented patient record:
+    - Lists documented medical conditions verbatim.
+    - Lists documented allergies verbatim. If absent/empty, explicitly states not documented;
+      never claims 'no allergies'.
+    - Lists documented current medications verbatim.
+    - Strictly avoids inferring unrecorded facts (no invented frequencies, doses, dates).
+    - Explicitly details missing or unspecified information.
+    """
+    age = patient.get("age")
+    sex = patient.get("sex")
+
+    # 1. Documented medical conditions
+    raw_conditions = patient.get("conditions") or patient.get("condition_tags") or []
+    conditions = [str(c).strip() for c in raw_conditions if str(c).strip()]
+
+    # 2. Documented allergies
+    raw_allergies = patient.get("allergies")
+    if raw_allergies is not None and isinstance(raw_allergies, list) and len(raw_allergies) > 0:
+        allergies = [str(a).strip() for a in raw_allergies if str(a).strip()]
+        allergies_documented = True
+    else:
+        allergies = []
+        allergies_documented = False
+
+    # 3. Documented current medications
+    raw_meds = patient.get("current_medications") or patient.get("medications") or []
+    medications = [str(m).strip() for m in raw_meds if str(m).strip()]
+
+    # 4. Missing / Unspecified information
+    missing_info = [
+        "Medication dosing schedule, administration frequency, route, and timing are not specified in the patient record.",
+        "Vital signs (blood pressure, heart rate, temperature, respiratory rate, SpO2) are not recorded in this profile.",
+        "Laboratory findings and diagnostic test results (e.g., HbA1c, renal function, electrolytes) are not documented.",
+    ]
+    if not allergies_documented:
+        missing_info.insert(
+            0,
+            "Allergies and hypersensitivities: Not documented in record (an empty list does not confirm absence of allergies; active clinical allergy history remains unspecified)."
+        )
+    else:
+        missing_info.append("Known severity, historical reaction dates, and non-listed drug hypersensitivities are not documented.")
+
+    # Formatted Markdown sections
+    lines = []
+
+    # Demographics
+    demo_parts = []
+    if age is not None:
+        demo_parts.append(f"Age: {age}")
+    if sex:
+        demo_parts.append(f"Sex: {sex}")
+    if demo_parts:
+        lines.append(f"**Patient Demographics (Documented):** {', '.join(demo_parts)}\n")
+
+    # Conditions
+    lines.append("**Documented Medical Conditions:**")
+    if conditions:
+        for c in conditions:
+            lines.append(f"- {c}")
+    else:
+        lines.append("- Not documented in record")
+    lines.append("")
+
+    # Allergies
+    lines.append("**Documented Allergies & Hypersensitivities:**")
+    if allergies_documented and allergies:
+        for a in allergies:
+            lines.append(f"- {a}")
+    else:
+        lines.append("- Not documented in record (chart has no recorded allergy entries; clinical status unconfirmed)")
+    lines.append("")
+
+    # Medications
+    lines.append("**Documented Current Medications:**")
+    if medications:
+        for m in medications:
+            lines.append(f"- {m}")
+    else:
+        lines.append("- Not documented in record")
+    lines.append("")
+
+    # Missing Information
+    lines.append("**Missing / Unspecified Information in Record:**")
+    for item in missing_info:
+        lines.append(f"- {item}")
+
+    message = "\n".join(lines)
+
+    return {
+        "message": message,
+        "structured_data": {
+            "conditions": conditions,
+            "allergies": allergies,
+            "allergies_documented": allergies_documented,
+            "current_medications": medications,
+            "missing_information": missing_info,
+        },
+    }
+
+
 def _fallback_plan(query: str, patient: Dict[str, Any]) -> Dict[str, Any]:
     """Rule-based planner used when no LLM is reachable."""
+    if _is_record_summary_request(query):
+        return {
+            "task": "record_summary",
+            "drugs": [],
+            "condition": None,
+            "intent": "general",
+            "topic": None,
+            "clarification": None,
+        }
+
+    known = extract_known_drugs(query)
     try:
-        drugs = agent_tools.get_finder().extract_drug_mentions(query)
+        finder_drugs = agent_tools.get_finder().extract_drug_mentions(query)
     except Exception:  # noqa: BLE001 - missing database must not break planning
-        drugs = []
-    # Also recognise the drugs behind the allergy rules, whatever the price database calls them.
-    seen = {d.split()[0].lower() for d in drugs}
-    drugs = drugs + [d for d in extract_known_drugs(query) if d.split()[0].lower() not in seen]
+        finder_drugs = []
+
+    # Prioritize multi-word / known clinical drugs over partial single-token finder matches
+    drugs = list(known)
+    known_lower = {k.lower() for k in known}
+    for fd in finder_drugs:
+        if not any(fd.lower() in k or k in fd.lower() for k in known_lower):
+            drugs.append(fd)
+            known_lower.add(fd.lower())
+
+    # If no drugs mentioned in query, but doctor asked about current medications, populate from patient profile
+    q_lower = query.lower()
+    if not drugs and any(w in q_lower for w in ("current", "regimen", "taking", "existing", "allergies", "interaction", "prescribing risks")):
+        meds = patient.get("current_medications") or []
+        for m in meds:
+            extracted = extract_known_drugs(m)
+            if extracted:
+                drugs.extend(extracted)
+            else:
+                drugs.append(m.split()[0])
+
     plan = validate_plan({"drugs": drugs})
     if not drugs:
         plan["task"] = "general"
@@ -590,6 +761,13 @@ def plan_node(state: AgentState, deps: AgentDeps) -> Dict[str, Any]:
         plan["source"] = "rules"
         audit.append({"step": "plan", "provider": None, "attempts": exc.attempts, "note": "rule-based planner used"})
 
+    if _is_record_summary_request(request):
+        plan["task"] = "record_summary"
+        plan["drugs"] = []
+        plan["condition"] = None
+        plan["topic"] = None
+        plan["clarification"] = None
+
     # Normalize an explicit generic request into a task that can be resumed.
     if _wants_generic_substitute(request) and not plan.get("drugs"):
         plan["task"] = "generic_substitution"
@@ -651,6 +829,13 @@ def research_node(state: AgentState, deps: AgentDeps) -> Dict[str, Any]:
 
     # Wait for essential clarification before running tools.
     if plan.get("clarification"):
+        return {
+            "research_evidence": None,
+            "jan_aushadhi_result": None,
+        }
+
+    # Record summary is grounded strictly in the patient record and requires no literature or catalogue lookup.
+    if plan.get("task") == "record_summary":
         return {
             "research_evidence": None,
             "jan_aushadhi_result": None,
@@ -804,6 +989,38 @@ def safety_node(state: AgentState, deps: AgentDeps) -> Dict[str, Any]:
                     "concurrently by mistake."
                 )
 
+    # Record summary tasks return grounded chart facts without literature retrieval
+    if plan.get("task") == "record_summary":
+        summary_result = build_patient_record_summary(patient, str(state.get("doctor_query") or ""))
+        response = {
+            "status": "info",
+            "title": "Patient Record Summary",
+            "message": summary_result["message"],
+            "evidence": "",
+            "suggestion": "Verify medication administration schedule and any unrecorded allergies with patient or clinical documentation.",
+            "savings": {"found": False, "text": "Not requested for patient record summary.", "items": []},
+            "sources": [],
+            "pmids": [],
+            "evidence_level": "not_applicable",
+            "claim_support": {
+                "status": "not_assessed",
+                "total_claims": 0,
+                "supported": 0,
+                "partially_supported": 0,
+                "unsupported": 0,
+                "contradicted": 0,
+                "not_found": 0,
+                "out_of_scope": 0,
+                "unverified_citations": [],
+                "checks": [],
+            },
+            "record_summary": summary_result["structured_data"],
+            "flags": flags,
+            "disclaimer": DISCLAIMER,
+            "audit": _audit(state, audit, None, None, plan, flags, notes=["Patient record summary grounded in documented chart data."]),
+        }
+        return {"flags": flags, "final_response": response}
+
     # Generic-substitution requests return catalogue results directly. Do not mislabel
     # the absence of PubMed articles as a failed clinical evidence search.
     if plan.get("task") == "generic_substitution":
@@ -939,10 +1156,18 @@ def safety_node(state: AgentState, deps: AgentDeps) -> Dict[str, Any]:
 def _audit(state: AgentState, llm_audit: List[Dict[str, Any]], evidence: Optional[Dict[str, Any]],
            substitutes: Optional[Dict[str, Any]], plan: Dict[str, Any], flags: List[Dict[str, str]],
            notes: Optional[List[str]] = None) -> Dict[str, Any]:
+    patient_data = state.get("patient_data") or {}
+    tools_dict: Dict[str, Any] = {
+        "evidence": (evidence or {}).get("status"),
+        "evidence_retryable": (evidence or {}).get("retryable"),
+        "substitute": (substitutes or {}).get("status"),
+    }
+    if plan.get("task") == "record_summary":
+        tools_dict["patient_record"] = "retrieved" if (patient_data and "error" not in patient_data) else "not_found"
+
     return {
         "timestamp": _now(), "patient_id": state.get("patient_id"), "plan": plan,
-        "tools": {"evidence": (evidence or {}).get("status"), "evidence_retryable": (evidence or {}).get("retryable"),
-                  "substitute": (substitutes or {}).get("status")},
+        "tools": tools_dict,
         "llm": llm_audit, "alert_types": [f["type"] for f in flags], "notes": notes or [],
     }
 

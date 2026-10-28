@@ -9,7 +9,7 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from .config import DATA_DIR
+from .config import DATA_DIR, PROJECT_ROOT
 
 DEFAULT_PATIENTS_PATH = Path(
     os.environ.get("PATIENTS_DB", DATA_DIR / "patients.json")
@@ -41,6 +41,18 @@ class PatientStore:
         self.error: str = ""
 
     def _load(self) -> None:
+        if not self.path.is_file():
+            candidates = [
+                PROJECT_ROOT / self.path,
+                DATA_DIR / self.path.name,
+                PROJECT_ROOT / "data" / self.path.name,
+                PROJECT_ROOT / "backend" / "app" / "data" / self.path.name,
+            ]
+            for c in candidates:
+                if c.is_file():
+                    self.path = c
+                    break
+
         try:
             mtime = self.path.stat().st_mtime
         except OSError:

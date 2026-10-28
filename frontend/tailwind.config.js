@@ -1,0 +1,2 @@
+/** @type {import('tailwindcss').Config} */
+export default { darkMode: ['class', '[data-theme="dark"]'], content: ['./index.html', './src/**/*.{ts,tsx}'], theme: { extend: { colors: { border: 'hsl(var(--border))', background: 'hsl(var(--background))', foreground: 'hsl(var(--foreground))', primary: 'hsl(var(--primary))', muted: 'hsl(var(--muted))', accent: 'hsl(var(--accent))', card: 'hsl(var(--card))' }, borderRadius: { xl: 'var(--radius)' } } }, plugins: [] }

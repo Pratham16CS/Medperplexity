@@ -1,0 +1,16 @@
+{
+  "PAT-014": {
+    "name": "Pooja Reddy (synthetic)",
+    "age": 56,
+    "sex": "female",
+    "condition_tags": [
+      "type 2 diabetes",
+      "osteoarthritis"
+    ],
+    "allergies": [],
+    "current_medications": [
+      "Metformin 500",
+      "Empagliflozin 10"
+    ]
+  }
+}
