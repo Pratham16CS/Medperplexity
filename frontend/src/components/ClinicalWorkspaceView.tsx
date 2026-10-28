@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+  Activity,
   AlertCircle,
   BookOpen,
   CheckCircle2,
@@ -18,6 +19,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  User,
   Users
 } from 'lucide-react'
 import type {
@@ -328,10 +330,11 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
       {patientsError && (
         <div
           style={{
-            padding: 12,
+            padding: '10px 14px',
             borderRadius: 'var(--radius-md)',
             background: 'var(--status-caution-bg)',
             color: 'var(--status-caution)',
+            border: '1px solid var(--status-caution-border)',
             fontSize: 12,
             display: 'flex',
             alignItems: 'center',
@@ -340,7 +343,7 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <AlertCircle size={16} style={{ flexShrink: 0 }} />
+            <AlertCircle size={15} style={{ flexShrink: 0 }} />
             <span>{patientsError}</span>
           </div>
           {onRefreshPatients && (
@@ -351,77 +354,97 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
         </div>
       )}
 
-      {/* Top Patient Context Banner */}
+      {/* Patient Identity Header */}
       {activePatient && (
         <div className="patient-banner">
-          <div className="patient-banner-left">
-            <div className="patient-initials" style={{ width: 44, height: 44, fontSize: 14 }}>
-              {activePatient.initials}
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <h2 style={{ fontSize: 17, fontWeight: 800 }}>{activePatient.name}</h2>
-                <span className="tag-chip">{activePatient.id}</span>
-                <span className="tag-chip" style={{ background: 'var(--teal-soft)', color: 'var(--teal-primary)', fontWeight: 600 }}>
-                  {activePatient.department || 'General Medicine'}
-                </span>
-                {activePatient.admissionStatus && (
-                  <span className="tag-chip" style={{ fontSize: 11, background: 'var(--surface-hover)' }}>
-                    {activePatient.admissionStatus}
+          <div className="patient-banner-top-row">
+            <div className="patient-identity-cluster">
+              <div className="patient-banner-avatar">
+                {activePatient.initials}
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <h2 className="patient-banner-name">{activePatient.name}</h2>
+                  <span className="tag-chip">{activePatient.id}</span>
+                  <span
+                    className="tag-chip"
+                    style={{
+                      background: 'var(--teal-soft)',
+                      color: 'var(--teal-primary)',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {activePatient.department || 'Medicine'}
                   </span>
-                )}
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  {activePatient.age} yrs · {activePatient.sex}
-                </span>
-              </div>
-              <div className="patient-banner-meta" style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <div style={{ color: 'var(--teal-primary)', fontWeight: 600 }}>
-                  Attending: <span>{activePatient.assignedDoctorName || user.full_name}</span>
-                </div>
-                {activePatient.roomBed && (
-                  <>
-                    <div>·</div>
-                    <div style={{ color: 'var(--text-secondary)' }}>
-                      Location: <strong>{activePatient.roomBed}</strong>
-                    </div>
-                  </>
-                )}
-                <div>·</div>
-                <div>
-                  <strong>Conditions:</strong>{' '}
-                  {activePatient.conditions.join(', ') || 'None recorded'}
-                </div>
-                <div>·</div>
-                <div>
-                  <strong>Allergies:</strong>{' '}
-                  {activePatient.allergies.length > 0 ? (
-                    <span className="tag-chip tag-chip-danger">
-                      <ShieldAlert size={12} style={{ display: 'inline', marginRight: 4 }} />
-                      {activePatient.allergies.join(', ')}
+                  {activePatient.admissionStatus && (
+                    <span className="tag-chip" style={{ fontSize: 11 }}>
+                      {activePatient.admissionStatus}
                     </span>
-                  ) : (
-                    <span style={{ color: 'var(--text-muted)' }}>No documented allergies</span>
                   )}
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    {activePatient.age} yrs · {activePatient.sex}
+                  </span>
                 </div>
               </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={handleReset}
+                title="Clear conversation session memory"
+              >
+                <RefreshCw size={12} /> Reset Thread
+              </button>
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <button className="btn btn-secondary btn-sm" onClick={handleReset} title="Clear conversation memory">
-              <RefreshCw size={13} /> Reset Thread
-            </button>
+          <div className="patient-banner-meta-grid">
+            <div className="patient-meta-item">
+              <span className="patient-meta-label">Attending:</span>
+              <span className="patient-meta-value">
+                {activePatient.assignedDoctorName || user.full_name}
+              </span>
+            </div>
+
+            {activePatient.roomBed && (
+              <div className="patient-meta-item">
+                <span className="patient-meta-label">Location:</span>
+                <span className="patient-meta-value">{activePatient.roomBed}</span>
+              </div>
+            )}
+
+            <div className="patient-meta-item" style={{ gridColumn: 'span 2' }}>
+              <span className="patient-meta-label">Conditions:</span>
+              <span className="patient-meta-value">
+                {activePatient.conditions.length > 0
+                  ? activePatient.conditions.join(', ')
+                  : 'None documented'}
+              </span>
+            </div>
+
+            <div className="patient-meta-item" style={{ gridColumn: 'span 2' }}>
+              <span className="patient-meta-label">Allergies:</span>
+              {activePatient.allergies.length > 0 ? (
+                <span className="tag-chip tag-chip-danger">
+                  <ShieldAlert size={12} style={{ display: 'inline', marginRight: 4 }} />
+                  {activePatient.allergies.join(', ')}
+                </span>
+              ) : (
+                <span style={{ color: 'var(--text-muted)' }}>No documented allergies</span>
+              )}
+            </div>
           </div>
         </div>
       )}
 
       {/* Main 3-Column Split */}
       <div className="clinical-grid">
-        {/* Left Column: Patient Directory */}
-        <div className="card patient-selector-card">
+        {/* Left Column: Patient Directory (Sidebar in Light mode dark palette) */}
+        <div className="patient-selector-card">
           <div className="card-title" style={{ justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Users size={16} color="var(--teal-primary)" />
+              <Users size={16} color="var(--sidebar-accent)" />
               <span>Hospital Patients</span>
             </div>
             <span className="tag-chip">
@@ -430,11 +453,10 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
           </div>
 
           {/* Doctor vs All Scope Selector */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
             <button
               type="button"
-              className={`btn btn-sm ${scopeFilter === 'my' ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ fontSize: 11, padding: '5px 8px', justifyContent: 'center' }}
+              className={`patient-selector-scope-btn ${scopeFilter === 'my' ? 'active' : ''}`}
               onClick={() => handleScopeChange('my')}
               title={`Show patients assigned to ${user.full_name} (${user.department})`}
             >
@@ -442,8 +464,7 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
             </button>
             <button
               type="button"
-              className={`btn btn-sm ${scopeFilter === 'all' ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ fontSize: 11, padding: '5px 8px', justifyContent: 'center' }}
+              className={`patient-selector-scope-btn ${scopeFilter === 'all' ? 'active' : ''}`}
               onClick={() => handleScopeChange('all')}
               title="Show all hospital inpatient and outpatient records"
             >
@@ -452,7 +473,7 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
           </div>
 
           {/* Department Filter Pills */}
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 10 }}>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             {['all', 'Cardiology', 'Neurology', 'Internal Medicine'].map((dept) => (
               <button
                 key={dept}
@@ -462,10 +483,11 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
                 style={{
                   cursor: 'pointer',
                   fontSize: 10,
-                  padding: '2px 8px',
-                  background: departmentFilter === dept ? 'var(--teal-primary)' : 'var(--surface-hover)',
-                  color: departmentFilter === dept ? '#fff' : 'var(--text-secondary)',
-                  border: 'none',
+                  padding: '2px 7px',
+                  background: departmentFilter === dept ? 'var(--sidebar-accent)' : 'var(--sidebar-surface)',
+                  color: departmentFilter === dept ? '#17241E' : 'var(--sidebar-text-muted)',
+                  border: departmentFilter === dept ? 'none' : '1px solid var(--sidebar-border)',
+                  fontWeight: departmentFilter === dept ? 700 : 500,
                 }}
               >
                 {dept === 'all' ? 'All Depts' : dept}
@@ -474,7 +496,7 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
           </div>
 
           <div className="search-input-wrap">
-            <Search size={14} />
+            <Search size={13} />
             <input
               type="text"
               placeholder="Find patient, condition, room…"
@@ -486,9 +508,9 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
 
           <div className="patient-scroll-list">
             {patientsLoading ? (
-              <div style={{ textAlign: 'center', padding: '24px 10px', color: 'var(--text-muted)', fontSize: 12 }}>
-                <LoaderCircle size={20} className="animate-spin" style={{ margin: '0 auto 8px' }} />
-                <div>Loading hospital patient records…</div>
+              <div style={{ textAlign: 'center', padding: '24px 10px', color: 'var(--sidebar-text-muted)', fontSize: 12 }}>
+                <LoaderCircle size={18} className="animate-spin" style={{ margin: '0 auto 8px', color: 'var(--sidebar-accent)' }} />
+                <div>Loading patient records…</div>
               </div>
             ) : displayedPatients.length > 0 ? (
               displayedPatients.map((p) => {
@@ -506,7 +528,7 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
                         <span className="patient-id-tag">{p.id}</span>
                       </div>
                       <div className="patient-detail-line">
-                        {p.conditions[0] || 'Clinical Review'} · {p.age}y {p.sex[0].toUpperCase()}
+                        {p.conditions[0] || 'Clinical Review'} · {p.age}y {p.sex ? p.sex[0].toUpperCase() : ''}
                       </div>
                       <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                         <span
@@ -514,15 +536,15 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
                           style={{
                             fontSize: 9,
                             padding: '1px 5px',
-                            background: isSelected ? 'rgba(255,255,255,0.2)' : 'var(--teal-soft)',
-                            color: isSelected ? '#fff' : 'var(--teal-primary)',
+                            background: isSelected ? 'var(--sidebar-surface-hover)' : 'var(--sidebar-surface)',
+                            color: isSelected ? 'var(--sidebar-text)' : 'var(--sidebar-text-muted)',
                             fontWeight: 600,
                           }}
                         >
                           {p.department || 'Medicine'}
                         </span>
                         {p.roomBed && (
-                          <span style={{ fontSize: 10, color: isSelected ? 'rgba(255,255,255,0.8)' : 'var(--text-muted)' }}>
+                          <span style={{ fontSize: 10, color: 'var(--sidebar-text-faint)' }}>
                             {p.roomBed}
                           </span>
                         )}
@@ -532,13 +554,13 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
                 )
               })
             ) : (
-              <div style={{ textAlign: 'center', padding: '20px 10px', color: 'var(--text-muted)', fontSize: 12 }}>
+              <div style={{ textAlign: 'center', padding: '20px 10px', color: 'var(--sidebar-text-muted)', fontSize: 12 }}>
                 <div>No patient records match the current filter.</div>
                 <div style={{ marginTop: 8, display: 'flex', gap: 6, justifyContent: 'center' }}>
                   <button
                     type="button"
-                    className="btn btn-secondary btn-sm"
-                    style={{ fontSize: 11 }}
+                    className="patient-selector-scope-btn"
+                    style={{ fontSize: 10, padding: '4px 8px' }}
                     onClick={() => {
                       setScopeFilter('all')
                       setDepartmentFilter('all')
@@ -550,11 +572,11 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
                   {onRefreshPatients && (
                     <button
                       type="button"
-                      className="btn btn-secondary btn-sm"
-                      style={{ fontSize: 11 }}
+                      className="patient-selector-scope-btn"
+                      style={{ fontSize: 10, padding: '4px 8px' }}
                       onClick={onRefreshPatients}
                     >
-                      <RefreshCw size={11} /> Refresh
+                      <RefreshCw size={10} style={{ marginRight: 4 }} /> Refresh
                     </button>
                   )}
                 </div>
@@ -563,9 +585,10 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
           </div>
         </div>
 
-        {/* Center Column: Query Composer & History */}
+        {/* Center Column: Query Composer & Clinical Conversation (Highest Priority) */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="card query-card">
+          {/* Query Composer Card */}
+          <div className="query-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div className="card-title">
                 <Sparkles size={16} color="var(--teal-primary)" />
@@ -590,7 +613,7 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
                   disabled={loading}
                   title={starter.prompt}
                 >
-                  <starter.icon size={13} style={{ display: 'inline', marginRight: 4 }} />
+                  <starter.icon size={12} style={{ display: 'inline', marginRight: 4 }} />
                   {starter.title}
                 </button>
               ))}
@@ -611,7 +634,7 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
               />
 
               <div className="composer-bottom">
-                <span className="composer-hint">Shift + Enter for new line</span>
+                <span className="composer-hint">Shift + Enter for new line · Enter to submit</span>
                 <button
                   className="btn btn-primary btn-sm"
                   disabled={!queryText.trim() || loading}
@@ -626,10 +649,11 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
             {error && (
               <div
                 style={{
-                  padding: 10,
+                  padding: '9px 12px',
                   borderRadius: 'var(--radius-md)',
                   background: 'var(--status-blocked-bg)',
                   color: 'var(--status-blocked)',
+                  border: '1px solid var(--status-blocked-border)',
                   fontSize: 12,
                   display: 'flex',
                   gap: 8,
@@ -642,37 +666,109 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
             )}
           </div>
 
-          {/* Conversation History Turns */}
+          {/* Clinical Conversation History (Highest Priority) */}
           {turns.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="chat-conversation-thread">
               {turns.map((turn, index) => (
-                <div key={turn.id} className="card" style={{ padding: 16 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: 11, color: 'var(--text-muted)' }}>
-                    <span>TURN {index + 1} · {turn.timestamp}</span>
-                    <span className={`status-pill status-${turn.response.status}`} style={{ fontSize: 10, padding: '2px 8px' }}>
-                      {turn.response.status.toUpperCase()}
-                    </span>
+                <div key={turn.id} className="chat-turn">
+                  {/* Doctor Message */}
+                  <div className="chat-msg-doctor">
+                    <div className="chat-msg-header">
+                      <div className="chat-msg-sender">
+                        <User size={13} color="var(--teal-primary)" />
+                        <span>{user.full_name} ({user.designation || 'Clinician'})</span>
+                      </div>
+                      <span>Turn {index + 1} · {turn.timestamp}</span>
+                    </div>
+                    <div className="chat-msg-text">{turn.query}</div>
                   </div>
 
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
-                    Q: {turn.query}
-                  </div>
+                  {/* Assistant Response */}
+                  <div className="chat-msg-assistant">
+                    <div className="chat-msg-header">
+                      <div className="chat-msg-sender">
+                        <Activity size={14} color="var(--teal-primary)" />
+                        <span>MedPerplexity Clinical Intelligence</span>
+                      </div>
+                      <span className={`status-pill status-${turn.response.status}`}>
+                        {turn.response.status === 'blocked' ? (
+                          <ShieldAlert size={12} />
+                        ) : turn.response.status === 'caution' ? (
+                          <AlertCircle size={12} />
+                        ) : (
+                          <CheckCircle2 size={12} />
+                        )}
+                        {turn.response.status.toUpperCase()}
+                      </span>
+                    </div>
 
-                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                    {turn.response.message}
-                  </p>
+                    <h4 className="chat-assistant-title">{turn.response.title}</h4>
+
+                    <div className="chat-assistant-body">{turn.response.message}</div>
+
+                    {turn.response.suggestion && (
+                      <div className="chat-suggestion-box">
+                        <strong>Clinical Suggestion:</strong> {turn.response.suggestion}
+                      </div>
+                    )}
+
+                    {/* Summary Badges strip */}
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', paddingTop: 6, borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text-muted)' }}>
+                      <span>Evidence Level: <strong>{turn.response.evidence_level || 'Standard'}</strong></span>
+                      {turn.response.flags && turn.response.flags.length > 0 && (
+                        <>
+                          <span>·</span>
+                          <span style={{ color: 'var(--status-blocked)', fontWeight: 600 }}>
+                            {turn.response.flags.length} Safety Flag{turn.response.flags.length > 1 ? 's' : ''}
+                          </span>
+                        </>
+                      )}
+                      {turn.response.sources && turn.response.sources.length > 0 && (
+                        <>
+                          <span>·</span>
+                          <span>{turn.response.sources.length} PubMed Citation{turn.response.sources.length > 1 ? 's' : ''}</span>
+                        </>
+                      )}
+                      {turn.response.claim_support && (
+                        <>
+                          <span>·</span>
+                          <span>Provenance: {turn.response.claim_support.status}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
           )}
 
+          {/* Loading state during evaluation */}
+          {loading && (
+            <div className="chat-msg-assistant" style={{ opacity: 0.9 }}>
+              <div className="chat-msg-header">
+                <div className="chat-msg-sender">
+                  <Activity size={14} color="var(--teal-primary)" />
+                  <span>MedPerplexity Clinical Intelligence</span>
+                </div>
+                <span className="tag-chip" style={{ background: 'var(--teal-soft)', color: 'var(--teal-primary)' }}>
+                  Processing
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', color: 'var(--text-secondary)', fontSize: 13 }}>
+                <LoaderCircle size={18} className="animate-spin" color="var(--teal-primary)" />
+                <span>Evaluating clinical safety constraints, searching PubMed literature, and checking claim provenance…</span>
+              </div>
+            </div>
+          )}
+
+          {/* Empty Conversation State */}
           {turns.length === 0 && !loading && (
-            <div className="card" style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
-              <ShieldCheck size={36} color="var(--teal-primary)" style={{ margin: '0 auto 12px', opacity: 0.8 }} />
-              <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
+            <div className="chat-empty-state">
+              <ShieldCheck size={36} color="var(--teal-primary)" style={{ opacity: 0.85 }} />
+              <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
                 Clinical Decision Support Ready
               </h3>
-              <p style={{ fontSize: 13, maxWidth: 420, margin: '0 auto', lineHeight: 1.5 }}>
+              <p style={{ fontSize: 13, maxWidth: 440, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                 Submit a prescription order or click a starter check above. MedPerplexity will evaluate
                 patient safety constraints, search PubMed literature, and assess claim provenance.
               </p>
@@ -681,19 +777,19 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
         </div>
 
         {/* Right Column: Structured Evidence, Safety & Audit Breakdown */}
-        <div className="clinical-right-col" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="clinical-right-col">
           {latestResponse ? (
             <div className="result-display">
               {/* System Assessment Status Card */}
-              <div className={`card status-hero-card ${latestResponse.status}`}>
+              <div className={`status-hero-card ${latestResponse.status}`}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                   <span className={`status-pill status-${latestResponse.status}`}>
                     {latestResponse.status === 'blocked' ? (
-                      <ShieldAlert size={14} />
+                      <ShieldAlert size={13} />
                     ) : latestResponse.status === 'caution' ? (
-                      <AlertCircle size={14} />
+                      <AlertCircle size={13} />
                     ) : (
-                      <CheckCircle2 size={14} />
+                      <CheckCircle2 size={13} />
                     )}
                     {latestResponse.status.toUpperCase()}
                   </span>
@@ -702,16 +798,16 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
                   </span>
                 </div>
 
-                <h3 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.3 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.35 }}>
                   {latestResponse.title}
                 </h3>
 
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.5 }}>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.55 }}>
                   {latestResponse.message}
                 </p>
 
                 {latestResponse.suggestion && (
-                  <div style={{ marginTop: 12, padding: 10, background: 'var(--surface-soft)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: 12 }}>
+                  <div style={{ marginTop: 12, padding: '9px 12px', background: 'var(--surface-soft)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: 12 }}>
                     <strong>Clinician Suggestion:</strong> {latestResponse.suggestion}
                   </div>
                 )}
@@ -727,7 +823,7 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
 
                   {latestResponse.flags.map((flag, i) => (
                     <div key={i} className={`safety-flag-item ${flag.severity}`}>
-                      <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                      <AlertCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
                       <div>
                         <strong>{flag.type?.toUpperCase() || 'ALERT'}:</strong> {flag.detail}
                         {flag.drug && <div style={{ fontSize: 11, opacity: 0.85, marginTop: 2 }}>Medicine: {flag.drug}</div>}
@@ -751,7 +847,7 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
                     {latestResponse.claim_support?.supported ?? 0}/{latestResponse.claim_support?.total ?? 0}
                   </div>
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 700 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
                       {latestResponse.claim_support?.status === 'supported'
                         ? 'Abstract Provenance Verified'
                         : latestResponse.claim_support?.status === 'insufficient'
@@ -767,7 +863,7 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
                 {latestResponse.claim_support?.checks && latestResponse.claim_support.checks.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
                     {latestResponse.claim_support.checks.map((c, idx) => (
-                      <div key={idx} style={{ fontSize: 11, padding: 8, background: 'var(--surface-soft)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                      <div key={idx} style={{ fontSize: 11, padding: 8, background: 'var(--surface-soft)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
                         <div style={{ fontWeight: 600, color: c.passed ? 'var(--status-approved)' : 'var(--status-blocked)' }}>
                           {c.passed ? '✓ Supported' : '✕ Unsupported'}: PMID {c.pmid}
                         </div>
@@ -792,7 +888,7 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
                   </div>
 
                   <div className="savings-banner" style={{ marginTop: 10 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-muted)' }}>
                       Price Comparison
                     </div>
                     <div style={{ fontSize: 13, marginTop: 4 }}>
@@ -804,7 +900,7 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
                       {latestResponse.savings.items.map((item, idx) => (
                         <div key={idx} style={{ padding: 10, background: 'var(--surface-soft)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: 12 }}>
-                          <strong>{item.generic_name}</strong>
+                          <strong style={{ color: 'var(--text-primary)' }}>{item.generic_name}</strong>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, color: 'var(--text-secondary)', fontSize: 11 }}>
                             <span>Jan Aushadhi: ₹{item.jan_aushadhi_price?.toFixed(2)} ({item.unit_size})</span>
                             <span style={{ color: 'var(--status-approved)', fontWeight: 700 }}>
@@ -896,7 +992,7 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
                     <div><strong>Tools Dispatched:</strong> {JSON.stringify(latestResponse.audit.tools || {})}</div>
                     <div><strong>LLM Steps:</strong> {latestResponse.audit.llm?.length ?? 0} step(s)</div>
                     {latestResponse.audit.notes && (
-                      <div style={{ marginTop: 4, padding: 8, background: 'var(--surface-soft)', borderRadius: 6 }}>
+                      <div style={{ marginTop: 4, padding: 8, background: 'var(--surface-soft)', borderRadius: 'var(--radius-sm)' }}>
                         <strong>Audit Notes:</strong>
                         <ul style={{ paddingLeft: 16, marginTop: 4 }}>
                           {latestResponse.audit.notes.map((n, i) => (
@@ -912,8 +1008,8 @@ export const ClinicalWorkspaceView: React.FC<ClinicalWorkspaceViewProps> = ({
           ) : (
             <div className="card" style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--text-muted)' }}>
               <FileSearch size={32} color="var(--text-muted)" style={{ margin: '0 auto 10px', opacity: 0.6 }} />
-              <div style={{ fontSize: 13, fontWeight: 600 }}>Structured Clinical Output</div>
-              <p style={{ fontSize: 11, marginTop: 4 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Structured Clinical Output</div>
+              <p style={{ fontSize: 11, marginTop: 4, lineHeight: 1.45 }}>
                 Status, PubMed sources, claim verification, and generic savings will appear here once you run a query.
               </p>
             </div>

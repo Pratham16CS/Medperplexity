@@ -172,7 +172,7 @@ export default function App() {
             <div className="brand-badge">CLINICAL INTELLIGENCE</div>
           </div>
           {sidebarOpen && (
-            <button onClick={() => setSidebarOpen(false)} style={{ color: 'var(--text-muted)' }}>
+            <button onClick={() => setSidebarOpen(false)} style={{ color: 'var(--sidebar-text-muted)' }}>
               <X size={18} />
             </button>
           )}
@@ -272,7 +272,7 @@ export default function App() {
             </div>
             <button
               onClick={handleSignOut}
-              style={{ color: 'var(--text-muted)', padding: 4 }}
+              style={{ color: 'var(--sidebar-text-muted)', padding: 4 }}
               title="Sign out of hospital session"
             >
               <LogOut size={16} />
