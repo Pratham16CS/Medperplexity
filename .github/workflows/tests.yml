@@ -12,4 +12,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[fast,test]"
+      - name: Verify email validation dependencies
+        run: |
+          python -m pip show pydantic email-validator
+          python -c "import email_validator; from pydantic import EmailStr; print('Email validation dependency OK')"
       - run: python -m unittest discover -s tests -v
