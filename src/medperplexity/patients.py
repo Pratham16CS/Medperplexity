@@ -11,9 +11,36 @@ from typing import Any, Dict, Optional
 
 from .config import DATA_DIR, PROJECT_ROOT
 
-DEFAULT_PATIENTS_PATH = Path(
-    os.environ.get("PATIENTS_DB", DATA_DIR / "patients.json")
-)
+def _default_patients_path() -> Path:
+    raw = os.environ.get("PATIENTS_DB")
+    if raw:
+        p = Path(raw)
+        if p.is_file():
+            return p.resolve()
+        for candidate in (
+            PROJECT_ROOT / p,
+            DATA_DIR / p.name,
+            PROJECT_ROOT / "data" / p.name,
+            PROJECT_ROOT / "backend" / "app" / "data" / p.name,
+        ):
+            if candidate.is_file():
+                return candidate.resolve()
+        return p
+
+    for candidate in (
+        DATA_DIR / "patients.json",
+        PROJECT_ROOT / "data" / "patients.json",
+        DATA_DIR / "patients.sample.json",
+        PROJECT_ROOT / "data" / "patients.sample.json",
+        PROJECT_ROOT / "backend" / "app" / "data" / "patients.sample.json",
+    ):
+        if candidate.is_file():
+            return candidate.resolve()
+
+    return (DATA_DIR / "patients.json").resolve()
+
+
+DEFAULT_PATIENTS_PATH = _default_patients_path()
 
 # Fields that identify a person. They never go into an LLM prompt or PubMed query.
 IDENTIFYING_KEYS = frozenset("""
@@ -34,7 +61,8 @@ class PatientStore:
     """
 
     def __init__(self, path: Optional[str | Path] = None):
-        self.path = Path(path) if path else DEFAULT_PATIENTS_PATH
+        self._custom_path = path is not None
+        self.path = Path(path) if path else _default_patients_path()
         self._lock = threading.Lock()
         self._mtime: Optional[float] = None
         self._records: Dict[str, Dict[str, Any]] = {}
@@ -42,16 +70,25 @@ class PatientStore:
 
     def _load(self) -> None:
         if not self.path.is_file():
-            candidates = [
-                PROJECT_ROOT / self.path,
-                DATA_DIR / self.path.name,
-                PROJECT_ROOT / "data" / self.path.name,
-                PROJECT_ROOT / "backend" / "app" / "data" / self.path.name,
-            ]
-            for c in candidates:
-                if c.is_file():
-                    self.path = c
-                    break
+            if not self._custom_path:
+                candidates = [
+                    PROJECT_ROOT / self.path,
+                    DATA_DIR / self.path.name,
+                    PROJECT_ROOT / "data" / self.path.name,
+                    PROJECT_ROOT / "backend" / "app" / "data" / self.path.name,
+                    DATA_DIR / "patients.sample.json",
+                    PROJECT_ROOT / "data" / "patients.sample.json",
+                    PROJECT_ROOT / "backend" / "app" / "data" / "patients.sample.json",
+                ]
+                for c in candidates:
+                    if c.is_file():
+                        self.path = c
+                        break
+            else:
+                for candidate in (PROJECT_ROOT / self.path, DATA_DIR / self.path.name):
+                    if candidate.is_file():
+                        self.path = candidate
+                        break
 
         try:
             mtime = self.path.stat().st_mtime
