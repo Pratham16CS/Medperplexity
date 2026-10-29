@@ -67,30 +67,81 @@ Generative language models operating alone present unacceptable risks in clinica
 
 MedPerplexity addresses these vulnerabilities by separating probabilistic reasoning from deterministic safety verification:
 
-```
-[ Natural Language Query ]
-            │
-            ▼
-┌───────────────────────────────┐
-│     LLM Clinical Planner      │ ── Extracts intent, drugs, conditions, patient ID
-└───────────────────────────────┘
-            │
-            ├──► Deterministic Safety Engine ──► Evaluates allergies, cross-reactivities,
-            │                                    duplicate therapies, drug interactions
-            │
-            ├──► NCBI Entrez PubMed Client   ──► Fetches live PMIDs, titles, abstracts
-            │                                    and validates claim-level support
-            │
-            └──► Generic Medicine Catalogue  ──► Matches equivalent salts, forms, strengths,
-                                                 and computes price savings
-            │
-            ▼
-┌───────────────────────────────┐
-│  Arbitration & Status Engine  │ ── Deterministic safety overrides probabilistic LLM
-└───────────────────────────────┘
-            │
-            ▼
-[ Auditable Clinical Output ]
+```mermaid
+%%{init: {
+  "theme": "base",
+  "flowchart": {
+    "curve": "linear",
+    "nodeSpacing": 35,
+    "rankSpacing": 50,
+    "htmlLabels": true,
+    "padding": 16
+  },
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, Arial, sans-serif",
+    "fontSize": "14px",
+    "lineColor": "#82918A"
+  }
+}}%%
+
+flowchart TB
+    Q(["Natural Language Query"])
+
+    subgraph PLAN["01 · CLINICAL PLANNING"]
+        direction TB
+        LLM["LLM Clinical Planner<br/>Extracts intent, drugs, conditions<br/>and patient ID"]
+    end
+
+    subgraph SERVICES["02 · SPECIALIZED SERVICES"]
+        direction LR
+
+        SAFETY["Deterministic Safety Engine<br/>Allergies and cross-reactivity<br/>Duplicate therapies<br/>Drug interactions"]
+
+        PUBMED["NCBI Entrez / PubMed<br/>Fetches PMIDs, titles and abstracts<br/>Claim-level support verification"]
+
+        MEDS["Generic Medicine Catalogue<br/>Matches ingredients, salts, forms<br/>and strengths<br/>Calculates potential price savings"]
+    end
+
+    subgraph ARBITRATION["03 · DECISION ARBITRATION"]
+        direction TB
+        STATUS["Arbitration & Status Engine<br/>Combines tool results and LLM output<br/>Safety rules take precedence"]
+    end
+
+    OUT(["Auditable Clinical Output<br/>Status · Safety Flags · Evidence · Explanation"])
+
+    Q --> LLM
+
+    LLM --> SAFETY
+    LLM --> PUBMED
+    LLM --> MEDS
+
+    SAFETY --> STATUS
+    PUBMED --> STATUS
+    MEDS --> STATUS
+
+    STATUS --> OUT
+
+    classDef input fill:#E7F0EC,stroke:#397665,color:#183D34,stroke-width:1.5px
+    classDef planner fill:#E6EEF9,stroke:#5279A8,color:#1D3554,stroke-width:1.5px
+    classDef safety fill:#F9E8E7,stroke:#B65C56,color:#632D2A,stroke-width:1.5px
+    classDef evidence fill:#E8EDF9,stroke:#687CB2,color:#293B68,stroke-width:1.5px
+    classDef medicines fill:#F8EEDC,stroke:#A9823F,color:#594018,stroke-width:1.5px
+    classDef arbitration fill:#E6F2E9,stroke:#4E8966,color:#214A32,stroke-width:1.8px
+    classDef output fill:#DCEFE8,stroke:#28765F,color:#143F32,stroke-width:2px
+
+    class Q input
+    class LLM planner
+    class SAFETY safety
+    class PUBMED evidence
+    class MEDS medicines
+    class STATUS arbitration
+    class OUT output
+
+    style PLAN fill:transparent,stroke:#8A9AA8,stroke-dasharray:4 4,color:inherit
+    style SERVICES fill:transparent,stroke:#8A9AA8,stroke-dasharray:4 4,color:inherit
+    style ARBITRATION fill:transparent,stroke:#8A9AA8,stroke-dasharray:4 4,color:inherit
+
+    linkStyle default stroke:#82918A,stroke-width:1.6px
 ```
 
 - **Safety Overrides:** If a deterministic rule flags a life-threatening allergy or major drug interaction, the overall order status is immediately clamped to `blocked` or `caution`, regardless of what the generative LLM generated.
@@ -216,49 +267,103 @@ The platform provides administrative audit logs and clinician profile customizat
 When a clinician executes a query (e.g., *"Prescribe Amoxicillin 500mg TDS for patient PAT-001"*), MedPerplexity executes the following deterministic lifecycle:
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    actor Clinician
-    participant Frontend as React 19 Frontend
-    participant Backend as FastAPI Backend
-    participant Agent as Agent Orchestrator
-    participant Rules as Deterministic Rules
-    participant PubMed as NCBI Entrez API
-    participant DB as SQLite DB
-    
-    Clinician->>Frontend: Enter query & select PAT-001
-    Frontend->>Backend: POST /api/chat {message, patient_id}
-    Backend->>Agent: query(question, patient_id)
-    
-    rect rgb(240, 248, 255)
-    Note over Agent: 1. Intent Extraction & Planning
-    Agent->>Agent: Identify task type, drug candidates, conditions
+flowchart TD
+
+    %% ───────── 1. CLINICAL QUERY ─────────
+    subgraph S1["① CLINICAL QUERY"]
+        Q["Clinician enters natural-language request + Patient ID<br/><i>'Prescribe Amoxicillin 500mg TDS for patient PAT-001'</i>"]
     end
-    
-    rect rgb(255, 245, 245)
-    Note over Agent,Rules: 2. Patient Context & Safety Check
-    Agent->>DB: Load Patient Record (PAT-001)
-    Agent->>Rules: check_safety(drugs, patient_record)
-    Rules-->>Agent: Flag: BLOCKED (Penicillin cross-allergy)
+
+    %% ───────── 2. REQUEST UNDERSTANDING ─────────
+    subgraph S2["② REQUEST UNDERSTANDING"]
+        P["🧠 LLM Clinical Planner<br/>Extracts structured information"]
+        X["Drug: Amoxicillin<br/>Dose: 500 mg<br/>Frequency: TDS<br/>Patient ID: PAT-001<br/>Intent: Prescribe"]
+        P --> X
     end
-    
-    rect rgb(245, 255, 245)
-    Note over Agent,PubMed: 3. Evidence Retrieval & Grounding
-    Agent->>PubMed: search_pubmed(query, quality_filter=True)
-    PubMed-->>Agent: Live Articles (PMIDs, Abstracts, Authors)
-    Agent->>Agent: Validate claim-level support against abstracts
+
+    %% ───────── 3. PARALLEL CLINICAL ANALYSIS ─────────
+    subgraph S3["③ PARALLEL CLINICAL ANALYSIS"]
+        PC[("Patient Context Retrieval<br/>Allergies · History · Current medications")]
+        SE["🛡️ Safety Engine<br/>• Allergy checking<br/>• Cross-reactivities<br/>• Drug interactions<br/>• Duplicate therapies"]
+        ER["📄 Evidence Retrieval<br/>• Search PubMed (NCBI Entrez)<br/>• Fetch PMIDs, titles, abstracts<br/>• Validate claim-level support"]
+        GM["💊 Generic Matching<br/>• Find equivalent salts<br/>• Match forms & strengths<br/>• Check availability (Jan Aushadhi)<br/>• Calculate potential price savings"]
+        PC --> SE
+        PC --> ER
+        PC --> GM
     end
-    
-    rect rgb(255, 250, 240)
-    Note over Agent: 4. Generic Matching & Arbitration
-    Agent->>DB: Find bioequivalent Jan Aushadhi generic
-    Agent->>Agent: Arbitrate final status (Blocked overrides LLM)
+
+    %% ───────── 4. ARBITRATION & DECISION ─────────
+    subgraph S4["④ ARBITRATION & DECISION"]
+        direction TB
+        A1["Consolidate outputs from all modules"]
+        A2["Apply deterministic safety rules<br/>(override LLM suggestions)"]
+        A3["Determine final status<br/>Blocked / Caution / Allowed"]
+        A4["Generate explainable rationale<br/>with sources & references"]
+        A1 --> A2 --> A3 --> A4
     end
-    
-    Agent-->>Backend: Structured Result (Status, Flags, Sources, Savings)
-    Backend->>DB: Persist Assessment & Audit Event
-    Backend-->>Frontend: HTTP 200 JSON Response
-    Frontend-->>Clinician: Render Blocked Hero Card, Provenance, & Next Steps
+
+    %% ───────── 5. OUTCOME DETERMINATION ─────────
+    subgraph S5["⑤ OUTCOME DETERMINATION"]
+        direction LR
+        B["❌ BLOCKED — Unsafe to proceed<br/><i>e.g. Penicillin allergy detected for Amoxicillin</i><br/>Outputs: Safety flag · Explanation · Alternative options"]
+        C["⚠️ CAUTION — Requires further review<br/><i>e.g. Potential drug interaction or precaution</i><br/>Outputs: Interaction details · Risk level · Supporting evidence"]
+        D["✅ ALLOWED — No blocking issues<br/><i>e.g. No safety concerns detected</i><br/>Outputs: Evidence sources · Generic alternatives · Estimated savings"]
+    end
+
+    %% ───────── 6. RESPONSE ─────────
+    subgraph S6["⑥ RESPONSE TO CLINICIAN"]
+        R["Structured, explainable, actionable response<br/>• Final status<br/>• Safety flags & explanations<br/>• PubMed evidence (PMIDs, abstracts)<br/>• Generic alternatives with price comparison<br/>• Recommended next steps"]
+    end
+
+    %% ───────── 7. AUDIT ─────────
+    subgraph S7["⑦ AUDIT & PERSISTENCE"]
+        AU[("• Persist assessment result<br/>• Store retrieved evidence & sources<br/>• Log system events & decisions<br/>• Maintain complete audit trail")]
+    end
+
+    %% ───────── 8. LEARNING ─────────
+    subgraph S8["⑧ CONTINUOUS LEARNING"]
+        L["• Monitor safety patterns<br/>• Analyze usage & outcomes<br/>• Improve prompts & rules<br/>• Support future model updates"]
+    end
+
+    %% ───────── FLOW ─────────
+    Q --> P
+    X --> PC
+    SE --> A1
+    ER --> A1
+    GM --> A1
+    A4 --> B
+    A4 --> C
+    A4 --> D
+    B --> R
+    C --> R
+    D --> R
+    R --> AU
+    AU --> L
+
+    %% ───────── STYLING ─────────
+    classDef query fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:2px
+    classDef understand fill:#ede9fe,stroke:#7c3aed,color:#4c1d95,stroke-width:2px
+    classDef safety fill:#fee2e2,stroke:#dc2626,color:#7f1d1d,stroke-width:2px
+    classDef evidence fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:2px
+    classDef generic fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:2px
+    classDef data fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:2px
+    classDef arbitrate fill:#e0e7ff,stroke:#4f46e5,color:#312e81,stroke-width:2px
+    classDef blocked fill:#fecaca,stroke:#dc2626,color:#7f1d1d,stroke-width:2px
+    classDef caution fill:#fde68a,stroke:#d97706,color:#78350f,stroke-width:2px
+    classDef allowed fill:#bbf7d0,stroke:#16a34a,color:#14532d,stroke-width:2px
+    classDef output fill:#f1f5f9,stroke:#475569,color:#0f172a,stroke-width:2px
+
+    class Q query
+    class P,X understand
+    class PC data
+    class SE safety
+    class ER evidence
+    class GM generic
+    class A1,A2,A3,A4 arbitrate
+    class B blocked
+    class C caution
+    class D allowed
+    class R,AU,L output
 ```
 
 ### Detailed Lifecycle Phases
@@ -284,61 +389,62 @@ sequenceDiagram
 MedPerplexity is built as a modular system with clear architectural separation between presentation, application orchestration, clinical rules, and storage.
 
 ```mermaid
-graph TD
-    subgraph Presentation_Layer["Presentation Layer (Client)"]
-        UI["React 19 + Tailwind CSS + Lucide"]
-        CW["Clinical Workspace"]
-        OD["Overview Dashboard"]
-        RL["Research Library"]
-        AH["Assessment History"]
-        AL["Hospital Audit Logs"]
-        SP["Saved Papers Notepad"]
+%%{init: {'theme':'base','themeVariables':{'fontSize':'16px','lineColor':'#94a3b8'},'flowchart':{'curve':'linear','nodeSpacing':40,'rankSpacing':50}}}%%
+flowchart TD
+
+    subgraph L1["1 · PRESENTATION"]
+        UI["<b>React 19 Client</b><br/>Tailwind CSS · Lucide<br/><br/>Clinical Workspace · Dashboard<br/>Research Library · History<br/>Audit Logs · Saved Papers"]
     end
 
-    subgraph Service_Layer["Service Layer (FastAPI Backend)"]
-        API["FastAPI 0.115+ REST API"]
-        AUTH["Auth & Session Controller"]
-        CHAT_EP["/api/chat Endpoint"]
-        RES_EP["/api/research Endpoints"]
-        PAT_EP["/api/patients Endpoints"]
-        AUD_EP["/api/audit & /api/admin"]
+    subgraph L2["2 · SERVICE LAYER"]
+        API["<b>FastAPI REST API</b><br/>Auth & Sessions<br/><br/>/api/chat · /api/research<br/>/api/patients · /api/audit"]
     end
 
-    subgraph Core_Agent["Clinical Agent Core (Python Engine)"]
-        ORCH["Clinical Agent Orchestrator"]
-        PLANNER["LLM Clinical Planner"]
-        RULES["Deterministic Safety Rule Engine"]
-        EVAL["Claim Grounding & Provenance"]
-        GEN_ENG["Generic Equivalency Engine"]
+    subgraph L3["3 · CLINICAL AGENT CORE"]
+        ORCH["<b>Orchestrator</b>"]
+        PLAN["<b>LLM Planner</b>"]
+        RULES["<b>Safety Rule Engine</b><br/>deterministic"]
+        GROUND["<b>Claim Grounding</b>"]
+        GEN["<b>Generic Engine</b>"]
     end
 
-    subgraph External_Services["External Services & APIs"]
-        NCBI["NCBI Entrez E-utilities (PubMed)"]
-        LLM_EXT["LLM Provider (OpenRouter / Anthropic / OpenAI / Gemini)"]
-    end
-
-    subgraph Persistence_Layer["Persistence Layer"]
-        SQLITE[("SQLite: medperplexity_platform.sqlite3")]
-        JSON_PAT[("data/patients.json")]
-        JSON_MED[("data/medicines.json")]
+    subgraph L4["4 · STORAGE & EXTERNAL"]
+        DB[("<b>SQLite</b><br/>platform data")]
+        JSON[("<b>JSON files</b><br/>patients · medicines")]
+        NCBI["<b>PubMed</b><br/>NCBI Entrez"]
+        LLM["<b>LLM Provider</b><br/>OpenRouter · Anthropic<br/>OpenAI · Gemini"]
     end
 
     UI --> API
-    CW & OD & RL & AH & AL & SP --> UI
-    
-    API --> AUTH & CHAT_EP & RES_EP & PAT_EP & AUD_EP
-    
-    CHAT_EP --> ORCH
-    ORCH --> PLANNER
-    PLANNER -.-> LLM_EXT
+    API --> ORCH
+    API --> DB
+    ORCH --> PLAN
     ORCH --> RULES
-    ORCH --> NCBI
-    ORCH --> EVAL
-    ORCH --> GEN_ENG
-    
-    RULES --> JSON_PAT
-    GEN_ENG --> JSON_MED
-    AUTH & CHAT_EP & RES_EP & AUD_EP --> SQLITE
+    ORCH --> GROUND
+    ORCH --> GEN
+    PLAN -.-> LLM
+    GROUND --> NCBI
+    RULES --> JSON
+    GEN --> JSON
+
+    classDef client fill:#2563eb,stroke:#1e40af,color:#fff,stroke-width:2px
+    classDef service fill:#7c3aed,stroke:#5b21b6,color:#fff,stroke-width:2px
+    classDef core fill:#0d9488,stroke:#115e59,color:#fff,stroke-width:2px
+    classDef rules fill:#15803d,stroke:#facc15,color:#fff,stroke-width:4px
+    classDef data fill:#475569,stroke:#1e293b,color:#fff,stroke-width:2px
+    classDef ext fill:#d97706,stroke:#92400e,color:#fff,stroke-width:2px
+
+    class UI client
+    class API service
+    class ORCH,PLAN,GROUND,GEN core
+    class RULES rules
+    class DB,JSON data
+    class NCBI,LLM ext
+
+    style L1 fill:none,stroke:#2563eb,stroke-width:2px,stroke-dasharray:6 4
+    style L2 fill:none,stroke:#7c3aed,stroke-width:2px,stroke-dasharray:6 4
+    style L3 fill:none,stroke:#0d9488,stroke-width:2px,stroke-dasharray:6 4
+    style L4 fill:none,stroke:#64748b,stroke-width:2px,stroke-dasharray:6 4
 ```
 
 ### Architectural Subsystems
@@ -369,12 +475,51 @@ MedPerplexity incorporates a reproducible pharmaceutical data pipeline that clea
 
 The preprocessing pipeline converts heterogeneous source datasets into a high-performance, indexed JSON catalogue:
 
-```
-[ jan_aushadhi.csv ] (PMBJP Generics)  ───┐
-                                          ├──► [ clean_data.py ] ──► [ clean_jan_aushadhi.csv ] ──┐
-[ brand_medicines.csv ] (Market Brands) ──┘                                                      ├──► [ build_database.py ] ──► data/medicines.json
-                                                                                                 │
-                                          └──► [ clean_brand_medicines.csv ] ────────────────────┘
+```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontSize':'16px','lineColor':'#94a3b8'},'flowchart':{'curve':'linear','nodeSpacing':40,'rankSpacing':60}}}%%
+flowchart LR
+
+    subgraph RAW["1 · RAW DATA"]
+        direction TB
+        J["<b>jan_aushadhi.csv</b><br/>PMBJP Generics"]
+        B["<b>brand_medicines.csv</b><br/>Market Brands"]
+    end
+
+    subgraph CLEAN["2 · CLEANING"]
+        direction TB
+        CD["<b>clean_data.py</b>"]
+        CJ["<b>clean_jan_aushadhi.csv</b>"]
+        CB["<b>clean_brand_medicines.csv</b>"]
+        CD --> CJ
+        CD --> CB
+    end
+
+    subgraph BUILD["3 · BUILD"]
+        direction TB
+        BD["<b>build_database.py</b>"]
+        OUT["<b>data/medicines.json</b><br/>final medicine database"]
+        BD --> OUT
+    end
+
+    J --> CD
+    B --> CD
+    CJ --> BD
+    CB --> BD
+
+    classDef raw fill:#d97706,stroke:#92400e,color:#fff,stroke-width:2px
+    classDef script fill:#7c3aed,stroke:#5b21b6,color:#fff,stroke-width:2px
+    classDef cleaned fill:#0d9488,stroke:#115e59,color:#fff,stroke-width:2px
+    classDef output fill:#15803d,stroke:#facc15,color:#fff,stroke-width:4px
+
+    class J,B raw
+    class CD,BD script
+    class CJ,CB cleaned
+    class OUT output
+
+    style RAW fill:none,stroke:#d97706,stroke-width:2px,stroke-dasharray:6 4
+    style CLEAN fill:none,stroke:#7c3aed,stroke-width:2px,stroke-dasharray:6 4
+    style BUILD fill:none,stroke:#15803d,stroke-width:2px,stroke-dasharray:6 4
+
 ```
 
 ### 1. Data Cleaning & Unit Standardization (`src/medperplexity/data_cleaning.py`)
